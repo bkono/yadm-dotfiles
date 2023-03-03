@@ -1,0 +1,54 @@
+[init]
+	defaultBranch = main
+  templatedir = ~/.git_templates
+[alias]
+  aa = add --all
+  ci = commit -v
+  cl = clone
+  co = checkout
+  pr = pull-request
+  st = status
+[color]
+  branch = auto
+  diff = auto
+  interactive = auto
+  status = auto
+  ui = auto
+[commit]
+	gpgsign = true
+[core]
+  autocrlf = input
+  editor = $EDITOR
+  excludesfile = ~/.gitignore_global
+	ignorecase = true
+  pager = delta
+  safecrlf = warn
+[delta]
+  side-by-side = true
+  navigate = true    # use n and N to move between diff sections
+  light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
+[diff]
+  tool = vimdiff
+  colorMoved = default
+[difftool]
+  prompt = false
+[fetch]
+  prune = true
+[include]
+  path = ~/.gitconfig.local
+[interactive]
+  diffFilter = delta --color-only
+[merge]
+  conflictstyle = diff3
+[mergetool "vimdiff"]
+  cmd = nvim -d $BASE $LOCAL $REMOTE $MERGED -c '$wincmd w' -c 'wincmd J'
+  prompt = false
+  keepBackup = false
+[mergetool "fugitive"]
+  cmd = nvim -f -c \"Gdiff\" \"$MERGED\"
+  trustExitCode = false
+[pull]
+  default = current
+  ff = only
+[push]
+  default = current

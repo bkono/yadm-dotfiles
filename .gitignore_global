@@ -1,0 +1,62 @@
+# Direnv stuff #
+################
+.direnv
+.envrc
+.tool-versions
+
+# OS generated files #
+######################
+.DS_Store
+ehthumbs.db
+Icon?
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Project settings files #
+##########################
+.idea
+*.iml
+.vscode/
+.buildpath
+.project
+.settings
+.vagrant
+
+# Editor files #
+################
+*~
+*.swp
+*.swo
+
+# Logs and databases #
+######################
+*.log
+*.sql
+*.sqlite
+.byebug_history
+
+# Tags #
+########
+tags
+tags.*
+
+# Git #
+#######
+.git
+
+# Deps #
+########
+.bundle
+node_modules
+**/.cocoapods
+
+# Emacs #
+#########
+.#*
+
+# Tmp #
+#######
+tmp/**/*
+!tmp/cache/.keep
+

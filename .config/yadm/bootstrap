@@ -43,9 +43,9 @@ if [ "$system_type" = "Darwin" ]; then
   defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 82 "{enabled = 0; value = { parameters = (65535, 124, 8781824); type = standard;};}"
 
   # Change current shell to the brew version of zsh
-  echo "Setting homebrew zsh as default system shell"
   shell_path="$(brew --prefix)/bin/zsh"
   if ! grep "$shell_path" /etc/shells > /dev/null 2>&1 ; then
+    echo "Setting homebrew zsh as default system shell"
    sudo bash -c "echo $shell_path >> /etc/shells"
   fi
   [ $SHELL != $shell_path ] && chsh -s "$shell_path"
