@@ -39,6 +39,7 @@ if ! zgenom saved; then
   # fzf
   zgenom load junegunn/fzf shell
   zgenom load urbainvaes/fzf-marks
+  zgenom load wfxr/forgit
 
   # evals
   zgenom eval --name direnv <<<"$(direnv hook zsh)"
