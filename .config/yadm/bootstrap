@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+system_type=$(uname -s)
+
+echo "Is this a personal or work machine?"
+select choice in "Personal" "Work"; do
+  yadm config local.class $choice
+  yadm alt
+  break;
+done
+
+echo "Bootstrapping for system type $system_type"
+
+if [ "$system_type" = "Darwin" ]; then
+  echo "Running macOS specific steps:"
+
+  # install Homebrew if it's missing
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Installing Homebrew"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+  fi
+
+  # setup via brew
+  if [ -f "$HOME/.Brewfile" ]; then
+    echo "Updating Homebrew bundle"
+    brew bundle --global
+  fi
+
+  # use iterm2 prefs from dotfiles
+  if [ -d "$HOME/.config/iterm2" ]; then
+    echo "Setting iTerm preference folder"
+    defaults write com.googlecode.iterm2 PrefsCustomFolder "$HOME/.config/iterm2"
+    defaults write com.googlecode.iterm2.plist LoadPrefsFromCustomFolder -bool true
+  fi
+
+  # Disable Ctrl+Arrow mapping for Mission Control as it's more useful for jumping words in a terminal
+  defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 79 "{enabled = 0; value = { parameters = (65535, 123, 8650752); type = standard;};}"
+  defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 80 "{enabled = 0; value = { parameters = (65535, 123, 8781824); type = standard;};}"
+  defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 81 "{enabled = 0; value = { parameters = (65535, 124, 8650752); type = standard;};}"
+  defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 82 "{enabled = 0; value = { parameters = (65535, 124, 8781824); type = standard;};}"
+
+  # Change current shell to the brew version of zsh
+  echo "Setting homebrew zsh as default system shell"
+  shell_path="$(brew --prefix)/bin/zsh"
+  if ! grep "$shell_path" /etc/shells > /dev/null 2>&1 ; then
+   sudo bash -c "echo $shell_path >> /etc/shells"
+  fi
+  [ $SHELL != $shell_path ] && chsh -s "$shell_path"
+fi
+
+
+echo "Updating the yadm repo origin URL to use SSH"
+yadm remote set-url origin "git@github.com:bkono/yadm-dotfiles.git"
+
+echo "...done. Open a new tab to get started."
