@@ -2,12 +2,15 @@
 
 system_type=$(uname -s)
 
-echo "Is this a personal or work machine?"
-select choice in "Personal" "Work"; do
-  yadm config local.class $choice
-  yadm alt
-  break;
-done
+class=$(yadm config --get local.class)
+if [ -z "$class" ]; then
+  echo "Is this a personal or work machine?"
+  select choice in "Personal" "Work"; do
+    yadm config local.class $choice
+    yadm alt
+    break;
+  done
+fi
 
 echo "Bootstrapping for system type $system_type"
 

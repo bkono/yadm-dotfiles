@@ -1,0 +1,43 @@
+# public
+*.gif
+*.jpeg
+*.jpg
+*.min*
+*.png
+*cache*
+*debug*
+.DS_Store
+.asdf
+.cargo
+.config/nvim/backup
+.config/nvim/bundle
+.config/nvim/swap
+.config/nvim/undo
+.cowsay
+.gem
+.git
+.local
+.localized
+.node-gyp
+.npm
+.oh-my-zsh
+.pylint*
+.rustup
+.v8flags*
+.vim/bundle
+.zcomp*
+Applications
+Desktop
+Downloads
+Dropbox
+Dropbox (Original)/
+Google Drive/
+Library
+Library/CloudStorage/
+Movies
+Music
+Screenshots
+fonts
+node_modules
+tmp
+vendor
