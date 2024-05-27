@@ -52,3 +52,5 @@
   ff = only
 [push]
   default = current
+[credential]
+	helper = !/opt/homebrew/bin/gh auth git-credential

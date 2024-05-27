@@ -69,7 +69,7 @@ return require('packer').startup(function(use)
   -- completion & lsp stuff {{{
   use {'neoclide/coc.nvim', branch = 'release'}
 
-  use {'github/copilot.vim'}
+  -- use {'github/copilot.vim'}
 
   -- use {
   --   'Exafunction/codeium.vim',

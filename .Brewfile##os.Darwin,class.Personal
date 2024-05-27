@@ -10,6 +10,7 @@ tap "owenthereal/upterm"
 
 brew "asdf"
 brew "bat"
+brew "coreutils"
 brew "direnv"
 brew "fd"
 brew "fzf"

@@ -2,3 +2,4 @@ set surround
 set commentary
 set relativenumber
 set number
+set ideajoinset ideajoin

@@ -10,8 +10,17 @@ export ZGEN_RESET_ON_CHANGE=(${HOME}/.zshrc ${HOME}/.zshrc.local)
 # check for updates every 7 days
 zgenom autoupdate --background
 
-[ -d /usr/local/bin ] && path=(/usr/local/bin $path)
-[ -d /opt/homebrew/bin ] && path=(/opt/homebrew/bin $path)
+local arch=$(uname -m)
+
+if [[ -d /usr/local/bin && ("$arch" == "x86_64") ]]; then
+  # setup asdf isolation for rosetta instances
+  export ASDF_DATA_DIR="$HOME/.config/rosetta/asdf"
+  [[ ! -d "$ASDF_DATA_DIR" ]] && mkdir -p "$ASDF_DATA_DIR"
+
+  path=(/usr/local/bin $path)
+fi
+
+[[ -d /opt/homebrew/bin && ("$arch" == "arm64") ]] && path=(/opt/homebrew/bin $path)
 eval "$(brew shellenv)"
 
 if ! zgenom saved; then
@@ -41,9 +50,9 @@ if ! zgenom saved; then
   zgenom load urbainvaes/fzf-marks
   zgenom load wfxr/forgit
 
-  # evals
-  zgenom eval --name direnv <<<"$(direnv hook zsh)"
-  zgenom eval --name starship <<<"$(starship init zsh)"
+  # evals - temporary tabling while getting parallel rosetta and silicon brew setups
+  # zgenom eval --name direnv <<<"$(direnv hook zsh)"
+  # zgenom eval --name starship <<<"$(starship init zsh)"
 
   zgenom load "$HOME/.config/zsh"
 
@@ -65,6 +74,12 @@ fi
 [ -d $HOME/.zgenom/bin ] && path=(~/.zgenom/bin $path)
 [ -d ~/.local ] && path=(~/.local/bin $path)
 [[ -f $(brew --prefix asdf)/libexec/asdf.sh ]] && source $(brew --prefix asdf)/libexec/asdf.sh
+
+[[ -d ~/.asdf/plugins/golang/ ]] && source ~/.asdf/plugins/golang/set-env.zsh
+export ASDF_GOLANG_MOD_VERSION_ENABLED=true
+
+eval "$(direnv hook zsh)"
+eval "$(starship init zsh)"
 
 [[ -e "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
