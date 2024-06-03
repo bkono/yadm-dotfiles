@@ -10,30 +10,49 @@ local get_api_key = function(path)
   end
 end
 
--- Define a table with body and command functions
+-- local default_model = "mistral:instruct"
+local default_model = "phi3:instruct"
+
+local function merge_options(defaults, options)
+  options.body = options.body or {}
+  for k, v in pairs(defaults) do
+    options.body[k] = v
+  end
+  print(vim.inspect(options))
+end
+
+local function build_curl_command(api_key, api_endpoint, extra_headers)
+  local curl_cmd = "curl --silent --no-buffer -X POST"
+  local header_options = "-H 'Authorization: Bearer " .. api_key .. "'"
+  if extra_headers then
+    header_options = header_options .. " " .. extra_headers
+  end
+  return curl_cmd .. " " .. header_options .. " " .. api_endpoint .. " -d $body"
+end
+
+local function get_api_details(api_url, api_key_path)
+  local api_key = get_api_key(api_key_path)
+  return api_key, api_url
+end
+
 local modelCommands = {
   ["groq"] = function(options)
     local new_body = { model = "llama3-70b-8192", max_tokens = 1024, temperature = 0.4, top_p = 1, stop = nil }
-    options.body = options.body or {}
-    for k, v in pairs(new_body) do
-      options.body[k] = v
-    end
-    print(vim.inspect(options))
-    local api_url = "https://api.groq.com"
+    merge_options(new_body, options)
+    local api_key, api_url = get_api_details("https://api.groq.com", "~/.groq/creds")
     local api_endpoint = api_url .. "/openai/v1/chat/completions"
-    local api_key_path = "~/.groq/creds"
-    local api_key = get_api_key(api_key_path)
-    local curl_cmd = "curl --silent --no-buffer -X POST"
-    local header_options = "-H 'Authorization: Bearer " .. api_key .. "'"
-    return curl_cmd .. " " .. header_options .. " " .. api_endpoint .. " -d $body"
+    return build_curl_command(api_key, api_endpoint)
   end,
-  ["mistral:instruct"] = function(options)
+  ["gpt4o"] = function(options)
+    local new_body = { model = "gpt-4o", max_tokens = 1024, temperature = 0.4, top_p = 1 }
+    merge_options(new_body, options)
+    local api_key, api_url = get_api_details("https://api.openai.com", "~/.openai/creds")
+    local api_endpoint = api_url .. "/v1/chat/completions"
+    return build_curl_command(api_key, api_endpoint, "-H 'Content-Type: application/json'")
+  end,
+  [default_model] = function(options)
     local new_body = { model = options.model, stream = true }
-    options.body = options.body or {}
-    for k, v in pairs(new_body) do
-      options.body[k] = v
-    end
-    print(vim.inspect(options))
+    merge_options(new_body, options)
     return "curl --silent --no-buffer -X POST http://" .. options.host .. ":" .. options.port .. "/api/chat -d $body"
   end,
   -- Add more models as needed
@@ -43,18 +62,19 @@ return {
   {
     "David-Kunz/gen.nvim",
     config = function()
-      require("gen").setup({
-        model = "mistral:instruct", -- The default model to use.
+      local g = require("gen")
+
+      g.setup({
+        model = default_model, -- The default model to use.
         host = "localhost", -- The host running the Ollama service.
         port = "11434", -- The port on which the Ollama service is listening.
         quit_map = "q", -- set keymap for close the response window
         retry_map = "<c-r>", -- set keymap to re-send the current prompt
-        init = function(options)
+        init = function(_)
           pcall(io.popen, "ollama serve > /dev/null 2>&1 &")
         end,
         -- Function to initialize Ollama
         command = function(options)
-          print("in the command func")
           local commandFunction = modelCommands[options.model]
 
           if not commandFunction then -- check if command function for given model exists
@@ -75,10 +95,55 @@ return {
         debug = false, -- Prints errors and the command which is run.
       })
 
-      require("gen").prompts["Groq Ask"] = {
+      g.prompts["groq:Ask"] = {
         model = "groq",
         prompt = "Regarding the following text, $input:\n$text",
       }
+
+      g.prompts["groq:Chat"] = {
+        model = "groq",
+        prompt = "$input",
+      }
+
+      g.prompts["gpt4o:Ask"] = {
+        model = "gpt4o",
+        prompt = "Regarding the following text, $input:\n$text",
+      }
+
+      g.prompts["gpt4o:Chat"] = {
+        model = "gpt4o",
+        prompt = "$input",
+      }
+
+      g.prompts["Commit Message"] = {
+        prompt = function(content, filetype)
+          local git_diff = vim.fn.system({ "git", "diff", "--staged" })
+
+          if not git_diff:match("^diff") then
+            error("Git error:\n" .. git_diff)
+          end
+
+          return "Write a terse commit message according to the Conventional Commits specification. Try to stay below 80 characters total. ONLY reply with the commit message and nothing else. Staged git diff: ```"
+            .. git_diff
+            .. "\n```"
+        end,
+        replace = true,
+        model = "groq",
+      }
     end,
+    keys = {
+      {
+        "<leader>]",
+        ":Gen<cr>",
+        desc = "Show Menu",
+        mode = { "n", "v", "x" },
+      },
+      {
+        "gk",
+        ":Gen<cr>",
+        desc = "Show Menu",
+        mode = { "n", "v", "x" },
+      },
+    },
   },
 }

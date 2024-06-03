@@ -16,9 +16,8 @@ local map = LazyVim.safe_keymap_set
 -- Buffers
 map("n", "<C-x>", "<cmd>bd<cr>")
 
--- Gen
-vim.keymap.set({ "n", "v" }, "<leader>]", ":Gen<CR>")
-vim.keymap.set({ "n", "v" }, "gk", ":Gen<CR>")
+-- Git
+vim.keymap.del("n", "<leader>ghr")
 
 --
 -- map("<leader><leader>", "<c-^>")
