@@ -12,10 +12,7 @@ if [[ -f /etc/os-release ]]; then
             fi
         fi
 
-        yadm clone --no-bootstrap https://github.com/bkono/yadm-dotfiles.git
-        yadm restore --staged $HOME
-        yadm checkout -- $HOME
-        yadm bootstrap
+        yadm clone -f --bootstrap https://github.com/bkono/yadm-dotfiles.git
     fi
 
 # if mac
