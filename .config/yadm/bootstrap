@@ -57,6 +57,24 @@ if [ "$system_type" = "Darwin" ]; then
   [ $SHELL != $shell_path ] && chsh -s "$shell_path"
 fi
 
+if [ -f /etc/os-release ]; then
+  source /etc/os-release
+
+  if [[ "$ID" == "ubuntu" || "$ID_LIKE" == "debian" ]]; then
+    echo "Running Ubuntu/Debian specific steps:"
+    # install starship if not installed
+    if ! command -v starship &>/dev/null; then
+      echo "Installing starship"
+      sudo curl -sS https://starship.rs/install.sh | sudo sh
+    fi
+
+    # install mise if not installed
+    if ! command -v mise &>/dev/null; then
+      echo "Installing mise"
+      curl https://mise.run | sh
+    fi
+  fi
+fi
 
 echo "Updating the yadm repo origin URL to use SSH"
 yadm remote set-url origin "git@github.com:bkono/yadm-dotfiles.git"

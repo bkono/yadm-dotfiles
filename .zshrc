@@ -84,6 +84,6 @@ export ASDF_GOLANG_MOD_VERSION_ENABLED=true
 
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 command -v starship &>/dev/null && eval "$(starship init zsh)"
+command -v mise &>/dev/null && eval "$(mise activate zsh)"
 
 [[ -e "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
-
