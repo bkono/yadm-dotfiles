@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Check if the system is Debian or Ubuntu
+if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    if [[ "$ID" == "ubuntu" || "$ID_LIKE" == "debian" ]]; then
+        # install yadm if not present
+        if ! command -v yadm &>/dev/null; then
+            if ! sudo apt-get update || ! sudo apt-get install -y yadm; then
+                echo "Failed to install yadm" >&2
+                exit 1
+            fi
+        fi
+
+        yadm clone --no-bootstrap https://github.com/bkono/yadm-dotfiles.git
+        yadm restore --staged $HOME
+        yadm checkout -- $HOME
+        yadm bootstrap
+    fi
+
+# if mac
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    # call the setup-mac script
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/bkono/yadm-dotfiles/main/.local/bin/setup-mac)"
+fi
