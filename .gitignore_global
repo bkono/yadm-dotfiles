@@ -15,13 +15,14 @@ Thumbs.db
 
 # Project settings files #
 ##########################
-.idea
 *.iml
-.vscode/
 .buildpath
+.idea
+.mise.local.toml
 .project
 .settings
 .vagrant
+.vscode/
 
 # Editor files #
 ################
