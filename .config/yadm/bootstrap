@@ -12,6 +12,12 @@ if [ -z "$class" ]; then
   done
 fi
 
+echo "Ensuring zgenom is installed"
+if [ ! -d "${HOME}/.zgenom" ]; then
+  echo "Installing zgenom"
+  git clone https://github.com/jandamm/zgenom.git "${HOME}/.zgenom"
+fi
+
 echo "Bootstrapping for system type $system_type"
 
 if [ "$system_type" = "Darwin" ]; then

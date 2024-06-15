@@ -12,7 +12,7 @@ zgenom autoupdate --background
 
 local arch=$(uname -m)
 
-if [[ -d /usr/local/bin && ("$arch" == "x86_64") ]]; then
+if [[ "$(uname -s)" == "Darwin" && -d /usr/local/bin && ("$arch" == "x86_64") ]]; then
   # setup asdf isolation for rosetta instances
   export ASDF_DATA_DIR="$HOME/.config/rosetta/asdf"
   [[ ! -d "$ASDF_DATA_DIR" ]] && mkdir -p "$ASDF_DATA_DIR"
@@ -21,7 +21,7 @@ if [[ -d /usr/local/bin && ("$arch" == "x86_64") ]]; then
 fi
 
 [[ -d /opt/homebrew/bin && ("$arch" == "arm64") ]] && path=(/opt/homebrew/bin $path)
-eval "$(brew shellenv)"
+command -v brew &>/dev/null && eval "$(brew shellenv)"
 
 if ! zgenom saved; then
   echo "Creating zgenom save state..."
@@ -61,7 +61,9 @@ if ! zgenom saved; then
   zgenom load zsh-users/zsh-completions
 
   [[ -x $(whence -cp upterm) ]] && zgenom eval --name upterm <<<"$(upterm completion zsh)"
-  [[ -d $(brew --prefix)/share/zsh/site-functions ]] && zgenom load --completion $(brew --prefix)/share/zsh/site-functions
+  if command -v brew &>/dev/null && [[ -d $(brew --prefix)/share/zsh/site-functions ]]; then
+    zgenom load --completion $(brew --prefix)/share/zsh/site-functions
+  fi
 
   zgenom save
 
@@ -73,13 +75,15 @@ fi
 
 [ -d $HOME/.zgenom/bin ] && path=(~/.zgenom/bin $path)
 [ -d ~/.local ] && path=(~/.local/bin $path)
-[[ -f $(brew --prefix asdf)/libexec/asdf.sh ]] && source $(brew --prefix asdf)/libexec/asdf.sh
+if command -v brew &>/dev/null; then
+  [[ -f $(brew --prefix asdf)/libexec/asdf.sh ]] && source $(brew --prefix asdf)/libexec/asdf.sh
+fi
 
 [[ -d ~/.asdf/plugins/golang/ ]] && source ~/.asdf/plugins/golang/set-env.zsh
 export ASDF_GOLANG_MOD_VERSION_ENABLED=true
 
-eval "$(direnv hook zsh)"
-eval "$(starship init zsh)"
+command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
+command -v starship &>/dev/null && eval "$(starship init zsh)"
 
 [[ -e "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
