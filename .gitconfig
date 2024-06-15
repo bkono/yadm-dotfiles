@@ -15,7 +15,7 @@
   status = auto
   ui = auto
 [commit]
-	gpgsign = true
+	gpgsign = false
 [core]
   autocrlf = input
   editor = $EDITOR

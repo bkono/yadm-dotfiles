@@ -126,6 +126,8 @@ alt-tab = 'workspace-back-and-forth'
 # alt-9 = 'workspace 9'
 # alt-0 = 'workspace 10'
 #
+cmd-ctrl-alt-shift-1 = 'move-node-to-workspace 1'
+cmd-ctrl-alt-shift-c = 'move-node-to-workspace c'
 # alt-shift-1 = 'move-node-to-workspace 1'
 # alt-shift-2 = 'move-node-to-workspace 2'
 # alt-shift-3 = 'move-node-to-workspace 3'
