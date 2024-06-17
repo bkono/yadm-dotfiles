@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 
 yadmCmd="yadm"
-echo "yadmCmd = [ $yadmCmd ]"
 
 # if yadm isn't available
-if ! command -v yadm &> /dev/null; then
-  echo "No yadm, temporarily installing to ~/.local/bin"
-  mkdir -p $HOME/.local/bin
-  curl -fLo $HOME/.local/bin/yadm https://github.com/TheLocehiliosan/yadm/raw/master/yadm
-  chmod a+x $HOME/.local/bin/yadm
-  yadmCmd="$HOME/.local/bin/yadm"
+if ! command -v yadm &>/dev/null; then
+    echo "No yadm, installing to ~/.local/bin"
+    mkdir -p $HOME/.local/bin
+    curl -fLo $HOME/.local/bin/yadm https://github.com/TheLocehiliosan/yadm/raw/master/yadm
+    chmod a+x $HOME/.local/bin/yadm
+    yadmCmd="$HOME/.local/bin/yadm"
 fi
 
 echo "Cloning and applying. Beware, this will forcibly replace any conflicting dotfiles..."
@@ -17,9 +16,3 @@ $yadmCmd clone --no-bootstrap https://github.com/bkono/yadm-dotfiles.git
 $yadmCmd restore --staged $HOME
 $yadmCmd checkout -- $HOME
 $yadmCmd bootstrap
-
-# cleanup if yadm is in ~/.local/bin
-if [[ -f $HOME/.local/bin/yadm ]]; then
-  echo "Cleaning up yadm from ~/.local/bin"
-  rm $HOME/.local/bin/yadm
-fi

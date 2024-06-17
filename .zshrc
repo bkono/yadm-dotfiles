@@ -13,10 +13,6 @@ zgenom autoupdate --background
 local arch=$(uname -m)
 
 if [[ "$(uname -s)" == "Darwin" && -d /usr/local/bin && ("$arch" == "x86_64") ]]; then
-  # setup asdf isolation for rosetta instances
-  export ASDF_DATA_DIR="$HOME/.config/rosetta/asdf"
-  [[ ! -d "$ASDF_DATA_DIR" ]] && mkdir -p "$ASDF_DATA_DIR"
-
   path=(/usr/local/bin $path)
 fi
 
@@ -50,10 +46,6 @@ if ! zgenom saved; then
   zgenom load urbainvaes/fzf-marks
   zgenom load wfxr/forgit
 
-  # evals - temporary tabling while getting parallel rosetta and silicon brew setups
-  # zgenom eval --name direnv <<<"$(direnv hook zsh)"
-  # zgenom eval --name starship <<<"$(starship init zsh)"
-
   zgenom load "$HOME/.config/zsh"
 
   zgenom load zsh-users/zsh-syntax-highlighting
@@ -75,15 +67,9 @@ fi
 
 [ -d $HOME/.zgenom/bin ] && path=(~/.zgenom/bin $path)
 [ -d ~/.local ] && path=(~/.local/bin $path)
-if command -v brew &>/dev/null; then
-  [[ -f $(brew --prefix asdf)/libexec/asdf.sh ]] && source $(brew --prefix asdf)/libexec/asdf.sh
-fi
 
-[[ -d ~/.asdf/plugins/golang/ ]] && source ~/.asdf/plugins/golang/set-env.zsh
-export ASDF_GOLANG_MOD_VERSION_ENABLED=true
-
+command -v mise &>/dev/null && eval "$(mise activate zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 command -v starship &>/dev/null && eval "$(starship init zsh)"
-command -v mise &>/dev/null && eval "$(mise activate zsh)"
 
 [[ -e "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"

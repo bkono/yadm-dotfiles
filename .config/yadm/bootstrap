@@ -2,20 +2,31 @@
 
 system_type=$(uname -s)
 
-class=$(yadm config --get local.class)
-if [ -z "$class" ]; then
-  echo "Is this a personal or work machine?"
-  select choice in "Personal" "Work"; do
-    yadm config local.class $choice
-    yadm alt
-    break;
-  done
+if [ -t 0 ]; then  # Check if the script is running interactively
+  class=$(yadm config --get local.class)
+  if [ -z "$class" ]; then
+    echo "Is this a personal or work machine?"
+    select choice in "Personal" "Work"; do
+      yadm config local.class $choice
+      yadm alt
+      break;
+    done
+  fi
 fi
 
 echo "Ensuring zgenom is installed"
 if [ ! -d "${HOME}/.zgenom" ]; then
   echo "Installing zgenom"
   git clone https://github.com/jandamm/zgenom.git "${HOME}/.zgenom"
+fi
+
+miseCmd="$HOME/.local/bin/mise"
+
+echo "Ensuring mise is installed"
+if ! command -v $miseCmd &>/dev/null; then
+  echo "Installing mise"
+  curl https://mise.run | sh
+  $miseCmd settings set experimental true
 fi
 
 echo "Bootstrapping for system type $system_type"
@@ -59,24 +70,17 @@ fi
 
 if [ -f /etc/os-release ]; then
   source /etc/os-release
-
-  if [[ "$ID" == "ubuntu" || "$ID_LIKE" == "debian" ]]; then
-    echo "Running Ubuntu/Debian specific steps:"
-    # install starship if not installed
-    if ! command -v starship &>/dev/null; then
-      echo "Installing starship"
-      sudo curl -sS https://starship.rs/install.sh | sudo sh
-    fi
-
-    # install mise if not installed
-    if ! command -v mise &>/dev/null; then
-      echo "Installing mise"
-      curl https://mise.run | sh
-    fi
-  fi
 fi
 
-echo "Updating the yadm repo origin URL to use SSH"
-yadm remote set-url origin "git@github.com:bkono/yadm-dotfiles.git"
+# baseline setup via mise for binaries
+eval "$($miseCmd activate bash)"
+command -v cargo >/dev/null 2>&1 || $miseCmd use -g rust -y
+$miseCmd use -g cargo:cargo-binstall -y
+$miseCmd use -g cargo:ubi -y
+$miseCmd use -g ubi:starship/starship -y
+$miseCmd use -g ubi:jesseduffield/lazygit -y
+
+echo "Updating the yadm repo origin URL, keeping https to support GITHUB_TOKEN and linux/macos interchangeability"
+yadm remote set-url origin "https://github.com/bkono/yadm-dotfiles.git"
 
 echo "...done. Open a new tab to get started."
