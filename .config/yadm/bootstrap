@@ -29,22 +29,24 @@ if ! command -v $miseCmd &>/dev/null; then
   $miseCmd settings set experimental true
 fi
 
+# install Homebrew if it's missing
+echo "Ensuring homebrew is available"
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Installing Homebrew"
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+fi
+
+# setup via brew
+echo "checking for Brewfile"
+if [ -f "$HOME/.Brewfile" ]; then
+  echo "Updating Homebrew bundle"
+  brew bundle --global
+fi
+
 echo "Bootstrapping for system type $system_type"
 
 if [ "$system_type" = "Darwin" ]; then
   echo "Running macOS specific steps:"
-
-  # install Homebrew if it's missing
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "Installing Homebrew"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
-  fi
-
-  # setup via brew
-  if [ -f "$HOME/.Brewfile" ]; then
-    echo "Updating Homebrew bundle"
-    brew bundle --global
-  fi
 
   # use iterm2 prefs from dotfiles
   if [ -d "$HOME/.config/iterm2" ]; then
@@ -73,12 +75,12 @@ if [ -f /etc/os-release ]; then
 fi
 
 # baseline setup via mise for binaries
-eval "$($miseCmd activate bash)"
-command -v cargo >/dev/null 2>&1 || $miseCmd use -g rust -y
-$miseCmd use -g cargo:cargo-binstall -y
-$miseCmd use -g cargo:ubi -y
-$miseCmd use -g ubi:starship/starship -y
-$miseCmd use -g ubi:jesseduffield/lazygit -y
+# eval "$($miseCmd activate bash)"
+# command -v cargo >/dev/null 2>&1 || $miseCmd use -g rust -y
+# $miseCmd use -g cargo:cargo-binstall -y
+# $miseCmd use -g cargo:ubi -y
+# $miseCmd use -g ubi:starship/starship -y
+# $miseCmd use -g ubi:jesseduffield/lazygit -y
 
 echo "Updating the yadm repo origin URL, keeping https to support GITHUB_TOKEN and linux/macos interchangeability"
 yadm remote set-url origin "https://github.com/bkono/yadm-dotfiles.git"

@@ -17,7 +17,12 @@ if [[ "$(uname -s)" == "Darwin" && -d /usr/local/bin && ("$arch" == "x86_64") ]]
 fi
 
 [[ -d /opt/homebrew/bin && ("$arch" == "arm64") ]] && path=(/opt/homebrew/bin $path)
-command -v brew &>/dev/null && eval "$(brew shellenv)"
+[[ -d $HOME/.linuxbrew/bin ]] && path=($HOME/.linuxbrew/bin $path)
+[[ -d $HOME/.linuxbrew ]] && eval "$($HOME/.linuxbrew/bin/brew shellenv)"
+[[ -d /home/linuxbrew/.linuxbrew/bin ]] && path=(/home/linuxbrew/.linuxbrew/bin $path)
+[[ -d /home/linuxbrew/.linuxbrew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+[[ -d $HOME/.local/bin ]] && path=($HOME/.local/bin $path)
+command -v brew &>/dev/null && eval "$($(brew --prefix)/bin/brew shellenv)"
 
 if ! zgenom saved; then
   echo "Creating zgenom save state..."
