@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# env-to-1pass.sh - Convert .env files to 1Password secure notes with .env.1pass templates
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") <env-file> <vault> <item-name>
+
+Converts a .env file into:
+  1. A 1Password secure note with all key/value pairs as fields
+  2. A .env.1pass file with op:// references
+
+Arguments:
+  env-file    Path to the .env file to convert
+  vault       1Password vault name
+  item-name   Name for the 1Password item
+
+Example:
+  $(basename "$0") .env.production "Development" "myapp-prod-env"
+EOF
+    exit 1
+}
+
+# Validate arguments
+[[ $# -ne 3 ]] && usage
+
+ENV_FILE="$1"
+VAULT="$2"
+ITEM_NAME="$3"
+
+# Validate .env file exists
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "Error: File '$ENV_FILE' not found" >&2
+    exit 1
+fi
+
+# Check op CLI is available
+if ! command -v op &> /dev/null; then
+    echo "Error: 1Password CLI (op) not found. Install it first." >&2
+    exit 1
+fi
+
+# Create temp directory for working files
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+TEMPLATE_FILE="$TMPDIR/template.json"
+ENV_1PASS_FILE="${ENV_FILE}.1pass"
+
+echo "Fetching secure note template..."
+op item template get "Secure Note" > "$TEMPLATE_FILE"
+
+echo "Parsing $ENV_FILE..."
+
+# Build fields array from .env file
+FIELDS_JSON="[]"
+while IFS= read -r line || [[ -n "$line" ]]; do
+    # Skip empty lines and comments
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    # Parse KEY=VALUE (handle values with = in them)
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+        key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+
+        # Remove surrounding quotes if present
+        value="${value#\"}"
+        value="${value%\"}"
+        value="${value#\'}"
+        value="${value%\'}"
+
+        # Add field to JSON array
+        FIELDS_JSON=$(echo "$FIELDS_JSON" | jq --arg k "$key" --arg v "$value" \
+            '. + [{"id": $k, "type": "CONCEALED", "label": $k, "value": $v}]')
+    fi
+done < "$ENV_FILE"
+
+# Update template with title and fields
+jq --arg title "$ITEM_NAME" --argjson fields "$FIELDS_JSON" \
+    '.title = $title | .fields = (.fields + $fields)' \
+    "$TEMPLATE_FILE" > "$TMPDIR/final-template.json"
+
+# Generate .env.1pass file with op:// references
+echo "Generating $ENV_1PASS_FILE..."
+{
+    echo "# Auto-generated from $ENV_FILE"
+    echo "# 1Password vault: $VAULT, item: $ITEM_NAME"
+    echo ""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Preserve empty lines and comments
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            echo "$line"
+            continue
+        fi
+
+        # Parse KEY=VALUE and replace with op:// reference
+        if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+            key="${BASH_REMATCH[1]}"
+            echo "${key}=\"op://${VAULT}/${ITEM_NAME}/${key}\""
+        else
+            echo "$line"
+        fi
+    done < "$ENV_FILE"
+} > "$ENV_1PASS_FILE"
+
+echo "Creating 1Password item in vault '$VAULT'..."
+op item create --vault "$VAULT" --template "$TMPDIR/final-template.json"
+
+echo ""
+echo "Done!"
+echo "  - Created 1Password item: $ITEM_NAME"
+echo "  - Generated template: $ENV_1PASS_FILE"
+echo ""
+echo "To inject secrets at runtime:"
+echo "  op run --env-file=$ENV_1PASS_FILE -- your-command"
+
