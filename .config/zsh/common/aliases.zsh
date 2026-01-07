@@ -39,3 +39,6 @@ alias v=$EDITOR
 alias v.="$EDITOR ."
 alias zgu='zgen update && sz'
 
+# coding agents
+alias nclaude='npx -y @anthropic-ai/claude-code@latest'
+alias ncodex='npx -y @openai/codex@latest'
