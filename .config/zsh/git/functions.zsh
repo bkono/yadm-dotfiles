@@ -70,6 +70,149 @@ function gclmkd() {
   gh repo clone $repo
 }
 
+function gwtn() {
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: gwtn <branch-name>"
+    echo "Example: gwtn feat/new-thing"
+    return 1
+  fi
+
+  branch_name=$1
+  
+  # Convert branch name to kebab case for worktree directory (replace slashes with hyphens)
+  worktree_name=${branch_name//\//-}
+  
+  # Get git root directory
+  git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [[ -z "$git_root" ]]; then
+    echo "Error: Not in a git repository"
+    return 1
+  fi
+  
+  # Check if .beads directory exists to determine which worktree command to use
+  if [[ -d "$git_root/.beads" ]]; then
+    use_bd=true
+  else
+    use_bd=false
+  fi
+  
+  # Get project name from git root directory name
+  project_name=$(basename "$git_root")
+  
+  # Worktree path is one level up from git root, in wt folder, prefixed with project name
+  worktree_path="$git_root/../wt/$project_name-$worktree_name"
+  
+  # Create the worktree
+  echo "Creating worktree at ../wt/$project_name-$worktree_name with branch $branch_name..."
+  if [[ "$use_bd" == true ]]; then
+    bd worktree create "../wt/$project_name-$worktree_name" --branch "$branch_name"
+  else
+    git worktree add "../wt/$project_name-$worktree_name" -b "$branch_name"
+  fi
+  
+  if [[ $? -ne 0 ]]; then
+    echo "Error: Failed to create worktree"
+    return 1
+  fi
+  
+  # Copy config files if they exist
+  echo "Copying config files..."
+  
+  if [[ -f "$git_root/.env" ]]; then
+    cp "$git_root/.env" "$worktree_path/.env"
+    echo "  ✓ Copied .env"
+  fi
+  
+  if [[ -f "$git_root/.mise.local.toml" ]]; then
+    cp "$git_root/.mise.local.toml" "$worktree_path/.mise.local.toml"
+    echo "  ✓ Copied .mise.local.toml"
+  fi
+  
+  if [[ -d "$git_root/.codex" ]]; then
+    mkdir -p "$worktree_path/.codex"
+    cp -r "$git_root/.codex/." "$worktree_path/.codex/"
+    echo "  ✓ Merged .codex/"
+  fi
+  
+  if [[ -d "$git_root/.claude" ]]; then
+    mkdir -p "$worktree_path/.claude"
+    cp -r "$git_root/.claude/." "$worktree_path/.claude/"
+    echo "  ✓ Merged .claude/"
+  fi
+  
+  echo "Done! Worktree created at ../wt/$project_name-$worktree_name"
+  echo "To switch: cd ../wt/$project_name-$worktree_name"
+}
+
+function gwtd() {
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: gwtd <branch-name>"
+    echo "Example: gwtd feat/new-thing"
+    return 1
+  fi
+
+  branch_name=$1
+  
+  # Convert branch name to kebab case for worktree directory (replace slashes with hyphens)
+  worktree_name=${branch_name//\//-}
+  
+  # Get git root directory
+  git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [[ -z "$git_root" ]]; then
+    echo "Error: Not in a git repository"
+    return 1
+  fi
+  
+  # Check if .beads directory exists to determine which worktree command to use
+  if [[ -d "$git_root/.beads" ]]; then
+    use_bd=true
+  else
+    use_bd=false
+  fi
+  
+  # Get project name from git root directory name
+  project_name=$(basename "$git_root")
+  
+  # Worktree path is one level up from git root, in wt folder, prefixed with project name
+  worktree_path="$git_root/../wt/$project_name-$worktree_name"
+  
+  # Check if worktree exists
+  if [[ ! -d "$worktree_path" ]]; then
+    echo "Error: Worktree not found at ../wt/$project_name-$worktree_name"
+    return 1
+  fi
+  
+  # Remove the worktree
+  echo "Removing worktree at ../wt/$project_name-$worktree_name..."
+  if [[ "$use_bd" == true ]]; then
+    bd worktree remove "$worktree_path"
+  else
+    git worktree remove "$worktree_path"
+  fi
+  
+  if [[ $? -ne 0 ]]; then
+    echo "Error: Failed to remove worktree"
+    return 1
+  fi
+  
+  echo "  ✓ Worktree removed"
+  
+  # Check if local branch exists and delete it
+  if git show-ref -q --verify refs/heads/$branch_name; then
+    echo "Deleting local branch $branch_name..."
+    git branch -D "$branch_name"
+    if [[ $? -eq 0 ]]; then
+      echo "  ✓ Local branch deleted"
+    else
+      echo "  ⚠ Failed to delete local branch (may be checked out elsewhere)"
+    fi
+  else
+    echo "  ℹ Local branch $branch_name does not exist"
+  fi
+  
+  echo "Done! Worktree and branch cleanup complete"
+}
+
 
 HASH="%C(yellow)%h%Creset"
 RELATIVE_TIME="%Cgreen(%ar)%Creset"

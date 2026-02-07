@@ -73,6 +73,7 @@ fi
 [ -d $HOME/.zgenom/bin ] && path=(~/.zgenom/bin $path)
 [ -d ~/.local ] && path=(~/.local/bin $path)
 
+[ -e "$HOME/.config/op/plugins.sh" ]; source "$HOME/.config/op/plugins.sh"
 command -v mise &>/dev/null && eval "$(mise activate zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 command -v starship &>/dev/null && eval "$(starship init zsh)"
