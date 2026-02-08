@@ -1,5 +1,5 @@
 ---
-description: End-of-session reflection. Logs what worked, what didn't, corrections received, and patterns learned to .claude/reflections.md
+description: End-of-session reflection. Logs what worked, what didn't, corrections received, and patterns learned to .codex/reflections.md
 allowed-tools: Read, Write, Bash(cat:*), Bash(date:*), Bash(wc:*)
 ---
 
@@ -9,7 +9,7 @@ You are performing an end-of-session reflection. This is how you learn across se
 
 ### Step 1: Read your scratchpad
 
-Read `.claude/reflections.md`. This is your persistent memory across sessions. If it doesn't exist, create it using the bootstrap structure below.
+Read `.codex/reflections.md`. This is your persistent memory across sessions. If it doesn't exist, create it using the bootstrap structure below.
 
 ### Step 2: Review this session
 
@@ -24,7 +24,7 @@ Look back at the full conversation. Identify:
 
 ### Step 3: Update the scratchpad
 
-Append a new dated entry to `.claude/reflections.md` under the `## Session Log` section.
+Append a new dated entry to `.codex/reflections.md` under the `## Session Log` section.
 
 Keep entries **concise and actionable** — future-you is reading this at the start of a fresh session with zero context. Write for that audience.
 
@@ -41,7 +41,7 @@ After updating the file, give a brief spoken summary to the user:
 
 ---
 
-### Bootstrap structure for `.claude/reflections.md`
+### Bootstrap structure for `.codex/reflections.md`
 
 If the file doesn't exist, create it with this structure:
 
