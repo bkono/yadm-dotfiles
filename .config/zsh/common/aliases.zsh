@@ -37,8 +37,15 @@ alias trunc='cat /dev/null >'
 alias watch='watch -n 1 '
 alias v=$EDITOR
 alias v.="$EDITOR ."
-alias zgu='zgen update && sz'
+alias zgen='zengom'
+alias zgu='zgenom update && sz'
 
 # coding agents
 alias nclaude='npx -y @anthropic-ai/claude-code@latest'
 alias ncodex='npx -y @openai/codex@latest'
+
+# --- Agent aliases (dangerously enabled by design) ---
+alias cc='NODE_OPTIONS="--max-old-space-size=32768" mise exec -- claude --dangerously-skip-permissions'
+alias cod='mise exec -- codex --dangerously-bypass-approvals-and-sandbox'
+alias gmi='mise exec -- gemini --yolo'
+alias oc='mise exec -- opencode'
