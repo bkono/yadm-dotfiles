@@ -19,6 +19,33 @@ He relies heavily on agentic development workflows and expects agents to improve
 
 ---
 
+## Tool Preferences
+
+- **Files:** `fd`, **Text:** `rg`, **Structure:** `tree`
+- **Code Analysis:** `ast-grep --lang ts/tsx/rust/go -p '<pattern>'`
+- **Processing:** `fzf`, `jq`, `yq`
+
+### ast-grep vs ripgrep (quick guidance)
+
+**Use `ast-grep` when structure matters.** It parses code and matches AST nodes, so results ignore comments/strings, understand syntax, and can **safely rewrite** code.
+
+* Refactors/codemods: rename APIs, change import forms, rewrite call sites or variable kinds.
+* Policy checks: enforce patterns across a repo (`scan` with rules + `test`).
+* Editor/automation: LSP mode; `--json` output for tooling.
+
+**Use `ripgrep` when text is enough.** It’s the fastest way to grep literals/regex across files.
+
+* Recon: find strings, TODOs, log lines, config values, or non‑code assets.
+* Pre-filter: narrow candidate files before a precise pass.
+
+**Rule of thumb**
+
+* Need correctness over speed, or you’ll **apply changes** → start with `ast-grep`.
+* Need raw speed or you’re just **hunting text** → start with `rg`.
+* Often combine: `rg` to shortlist files, then `ast-grep` to match/modify with precision.
+
+---
+
 ## Agent Hygiene — this is the point of this file
 
 Context degrades across sessions. Post-compaction, agents retain *what was done* but lose *why decisions were made*. This causes defaulting to conservative "preserve everything" patterns, treating new systems as supplemental rather than replacements, and resurrecting dead code because the rejection rationale was lost. The practices below exist to prevent that.
