@@ -84,6 +84,39 @@ Do not leave ambiguity that invites resurrection.
 
 When Bryan provides a detailed session-start prompt, it exists because context has been lost. Trust it over your own sense of what the project "probably" needs. If something seems off or contradicts what you'd expect — ask. Do not silently reinterpret "complete replacement" as "transitional wrapper" or "incremental migration."
 
+### Lock behavior before implementing parity/migration work
+
+For legacy ports or parity work, lock behavior before writing code:
+
+- Extract concrete behavior from source files first.
+- Get explicit keep/change/drop decisions.
+- Implement only the locked subset.
+- Record the lock in a durable artifact (decision doc + issue notes) so future sessions do not drift.
+
+### Validate acceptance behavior before closure
+
+Do not close a UX/behavior issue on compile/build success alone:
+
+- Validate against user-visible acceptance behavior.
+- Add at least one regression test for the exact observed failure mode.
+- Confirm loading/transition behavior, not only data correctness.
+
+### Prevent SPA state-coupling regressions
+
+For route-driven SPA surfaces:
+
+- Separate route resolution, collection fetch, and detail fetch/loading states.
+- Preserve stable shell regions during in-surface transitions.
+- Localize loading indicators to changed panes.
+- Avoid scroll resets for in-surface selection changes unless explicitly requested.
+
+### Reasoning Realizations (Carry Forward)
+
+- Quality is primarily driven by decision clarity and enforced boundaries, not framework choice.
+- Highest-leverage tests are regressions targeting exact user-observed failures.
+- Small behavior-scoped commits improve review quality, rollback safety, and continuity across agents.
+- Defense-in-depth works best with explicit boundary order: persistence validation first, then API contract guards, then UI defenses.
+
 ---
 
 ## Iteration Protocol
