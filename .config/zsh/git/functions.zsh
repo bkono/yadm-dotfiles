@@ -1,5 +1,9 @@
 #!/usr/bin/env zsh
 
+function prune_stale_branches() {
+  git fetch --prune && git branch -vv | grep ': gone]' | awk '{print $1}' | xargs git branch -d
+}
+
 function git_main_branch() {
   if [[ $(git rev-parse --git-dir 2> /dev/null) ]]; then
     default_branch=$(git config --get init.defaultBranch)

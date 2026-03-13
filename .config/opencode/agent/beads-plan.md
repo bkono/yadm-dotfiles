@@ -1,7 +1,7 @@
 ---
 description: Plans and creates Beads (bd) issue graphs from requirements
 mode: primary
-model: openai/gpt-5.2
+model: openai/gpt-5.3-codex
 reasoningEffort: high
 temperature: 0.1
 tools:

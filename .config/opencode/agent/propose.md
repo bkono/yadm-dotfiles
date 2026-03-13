@@ -1,9 +1,8 @@
 ---
 description: Deep-planning agent that interviews users thoroughly before writing detailed proposals
 mode: primary
-model: openai/gpt-5.2
 reasoningEffort: high
-temperature: 0.1
+temperature: 0.2
 tools:
   bash: true
   webfetch: true

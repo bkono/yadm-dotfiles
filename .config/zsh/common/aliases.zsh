@@ -44,8 +44,12 @@ alias zgu='zgenom update && sz'
 alias nclaude='npx -y @anthropic-ai/claude-code@latest'
 alias ncodex='npx -y @openai/codex@latest'
 
-# --- Agent aliases (dangerously enabled by design) ---
-alias cc='NODE_OPTIONS="--max-old-space-size=32768" mise exec -- claude --dangerously-skip-permissions'
-alias cod='mise exec -- codex --dangerously-bypass-approvals-and-sandbox'
-alias gmi='mise exec -- gemini --yolo'
-alias oc='mise exec -- opencode'
+# --- Agent aliases (sandboxed + mise) ---
+cc() {
+      eval "$(mise env)"
+      ~/.config/sandbox-exec/run-sandboxed.sh claude --dangerously-skip-permissions "$@"
+  }
+# cc()  { ~/.config/sandbox-exec/run-sandboxed.sh mise exec -- claude --dangerously-skip-permissions "$@"; }
+cod() { ~/.config/sandbox-exec/run-sandboxed.sh mise exec -- codex --dangerously-bypass-approvals-and-sandbox "$@"; }
+gmi() { ~/.config/sandbox-exec/run-sandboxed.sh mise exec -- gemini --yolo "$@"; }
+oc()  { ~/.config/sandbox-exec/run-sandboxed.sh mise exec -- opencode "$@"; }

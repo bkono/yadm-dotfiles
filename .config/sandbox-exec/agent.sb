@@ -1,0 +1,997 @@
+;; ---------------------------------------------------------------------------
+;; Agent Sandbox Profile (generated for bkonowitz)
+;; Modelled on Agent Safehouse (https://github.com/eugene1g/agent-safehouse)
+;;
+;; Deny-first policy for sandboxing AI coding agents on macOS.
+;; Detected toolchains: Node.js, Python, Go, Rust, mise
+;; Detected agents: Claude Code, Codex, Cursor, Gemini
+;;
+;; Debug sandbox denials:
+;;   /usr/bin/log stream --style compact --predicate 'eventMessage CONTAINS "Sandbox:" AND eventMessage CONTAINS "deny("'
+;;   /usr/bin/log stream --style compact --info --debug --predicate '(processID == 0) AND (senderImagePath CONTAINS "/Sandbox")'
+;; ---------------------------------------------------------------------------
+
+(version 1)
+
+;; ---------------------------------------------------------------------------
+;; Base Profile
+;; Core definitions, HOME_DIR, helper macros, and deny-default.
+;; Source: 00-base.sb
+;; ---------------------------------------------------------------------------
+
+(define HOME_DIR "/Users/bkonowitz")
+
+(define (home-subpath rel) (subpath (string-append HOME_DIR rel)))
+(define (home-literal rel) (literal (string-append HOME_DIR rel)))
+(define (home-prefix rel) (prefix (string-append HOME_DIR rel)))
+
+(deny default)
+
+;; ---------------------------------------------------------------------------
+;; System Runtime
+;; Process execution, tmp/dev access, system binaries, and baseline mach services.
+;; Source: 10-system-runtime.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read*
+    (subpath "/usr")                                                  ;; Core system binaries and libraries required by most spawned tools.
+    (subpath "/bin")                                                  ;; POSIX userland binaries used by shell/task orchestration.
+    (subpath "/sbin")                                                 ;; System utilities some build/test flows invoke.
+    (subpath "/opt")                                                  ;; Homebrew and other package-manager install roots.
+    (subpath "/System/Library")                                       ;; macOS runtime frameworks/resources; excludes broader /System/Volumes data paths.
+    (subpath "/System/Volumes/Preboot")                               ;; Some dyld/framework lookups resolve through Preboot symlinks on modern macOS.
+    (subpath "/Library/Apple")                                        ;; Apple private frameworks touched by Node/Bun/JVM/native toolchains.
+    (subpath "/Library/Frameworks")                                   ;; Global framework lookup path for language runtimes and CLIs.
+    (subpath "/Library/Fonts")                                        ;; Font reads used by headless renderers/PDF/image tasks.
+    (subpath "/Library/Filesystems/NetFSPlugins")                     ;; Path resolution may load NetFS plugins during filesystem lookups.
+    (subpath "/Library/Preferences/Logging")                          ;; macOS logging stack reads prefs during process init.
+    (literal "/Library/Preferences/.GlobalPreferences.plist")         ;; Locale/time/user defaults queried by runtimes.
+    (literal "/Library/Preferences/com.apple.networkd.plist")         ;; DNS/network bootstrap reads networkd config.
+    (literal "/dev")                                                  ;; /dev directory listing; shells enumerate it during initialization.
+)
+
+;; Metadata-only traversal on system roots needed during binary/framework discovery for spawned local-agent tools.
+(allow file-read-metadata
+   (subpath "/System")                                                ;; stat/readdir traversal across /System during loader/framework path resolution.
+   (subpath "/private/var/run")                                       ;; Metadata traversal for /private/var/run socket namespace.
+)
+
+;; PATH resolution for posix_spawn: when Node/npm spawns a bare command name
+;; (e.g. 'sh'), posix_spawn walks every PATH directory. If any directory stat()
+;; is denied, posix_spawn aborts with EPERM instead of continuing to the next
+;; entry. Grant metadata-only (stat/readdir) on common PATH directories that
+;; aren't already covered by broader file-read* rules above.
+(allow file-read-metadata
+    (subpath "/Applications")                                         ;; App bundles that add bins to PATH (Postgres.app, Ghostty, etc.).
+    (home-literal "/.opencode")                                       ;; opencode AI tool.
+    (home-literal "/.opencode/bin")                                   ;; opencode binaries in PATH.
+    (home-literal "/.orbstack")                                       ;; OrbStack container runtime.
+    (home-literal "/.orbstack/bin")                                   ;; OrbStack CLI binaries in PATH.
+    (home-literal "/bin")                                             ;; User personal bin directory.
+)
+
+;; /etc and /var are symlinks into /private/* on macOS; keep this scoped to baseline local-agent runtime needs.
+(allow file-read*
+    (literal "/private")                                              ;; Required for symlink traversal under macOS /private namespace.
+    (literal "/private/var")                                          ;; Required for symlink traversal to /var-backed paths.
+    (subpath "/private/var/db/timezone")                              ;; Timezone DB reads used by language date/time formatting.
+    (literal "/private/var/select/sh")                                ;; /bin/sh selector used by macOS shell launch behavior.
+    (literal "/private/var/select/developer_dir")                     ;; xcode-select developer dir pointer used by build CLIs.
+    (literal "/var/select/developer_dir")                             ;; Compatibility alias for developer dir pointer.
+    (literal "/private/var/db/xcode_select_link")                     ;; xcode-select link lookup used by toolchain discovery.
+    (literal "/var/db/xcode_select_link")                             ;; Compatibility alias for xcode-select link lookup.
+    (literal "/private/etc/hosts")                                    ;; Host override file consulted by resolver stack.
+    (literal "/private/etc/resolv.conf")                              ;; DNS resolver configuration used by network clients.
+    (literal "/private/etc/services")                                 ;; Service name-to-port mappings used by libc lookups.
+    (literal "/private/etc/protocols")                                ;; Protocol metadata used by socket/libc helpers.
+    (literal "/private/etc/shells")                                   ;; Valid shell list read by shell/auth tooling.
+    (subpath "/private/etc/ssl")                                      ;; TLS CA bundles/certs used by HTTP and package clients.
+    (literal "/private/etc/localtime")                                ;; Localtime symlink read by date/time libraries.
+    (literal "/etc")                                                  ;; Compatibility symlink root for tools hardcoding /etc.
+    (literal "/var")                                                  ;; Compatibility symlink root for tools hardcoding /var.
+)
+
+;; Metadata-only traversal for common XDG/home probe paths used by local LLM tooling during startup.
+(allow file-read-metadata
+    (literal "/home")                                                 ;; Probed during path resolution by some runtimes.
+    (literal "/private/etc")                                          ;; Directory traversal for /etc path resolution.
+    (subpath "/dev")                                                  ;; Metadata (stat) on /dev entries; readdir() on /dev triggers this for every node.
+    (home-literal "/.config")                                         ;; XDG config root traversal needed by many tools (mise, gh, git, etc.).
+    (home-literal "/.cache")                                          ;; XDG cache root traversal needed by tools probing cache locations.
+    (home-literal "/.local")                                          ;; XDG data root traversal needed by tools probing ~/.local paths.
+    (home-literal "/.local/share")                                    ;; XDG data share dir traversal needed by tools probing data locations.
+    (home-literal "/.local/bin")                                      ;; Agents stat this before installing binaries into ~/.local/bin.
+)
+
+;; User preference reads needed by local agents/CLIs at startup.
+(allow file-read*
+    (home-prefix "/Library/Preferences/.GlobalPreferences")           ;; User-level locale/defaults plist variants read by many frameworks.
+    (home-prefix "/Library/Preferences/com.apple.GlobalPreferences")  ;; Apple namespaced variant of user GlobalPreferences.
+    (home-subpath "/Library/Preferences/ByHost")                      ;; Per-host preferences read by security CLI and system frameworks.
+    (home-literal "/.CFUserTextEncoding")                             ;; User text encoding prefs; read by many processes for correct string handling.
+    (home-literal "/.config")                                         ;; XDG config root directory listing for tool discovery.
+    (home-literal "/.cache")                                          ;; XDG cache root directory listing for tool discovery.
+)
+
+;; Process primitives: agent workflows frequently chain many subprocesses.
+(allow process-exec)                                                  ;; Required to execute toolchain binaries, shells, and repo tools.
+(allow process-fork)                                                  ;; Required for normal child-process trees in CLI agents.
+(allow sysctl-read)                                                   ;; Runtime/process introspection used by many CLIs at startup.
+(allow process-info* (target same-sandbox))                           ;; Allow process introspection within the same sandbox.
+(allow signal (target same-sandbox))                                  ;; Allow signalling child processes for cancellation/termination.
+(allow mach-priv-task-port (target same-sandbox))                     ;; Required by some runtimes for same-sandbox process controls.
+(allow pseudo-tty)                                                    ;; Required for interactive terminal sessions and PTY allocation.
+
+;; Temporary file and socket locations used by local agent subprocesses, package managers, and compilers.
+(allow file-read* file-write*
+    (subpath "/tmp")                                                  ;; Primary temp dir for transient files and IPC sockets.
+    (subpath "/private/tmp")                                          ;; macOS backing path for /tmp.
+    (subpath "/var/folders")                                          ;; macOS per-user temp/cache roots used by many CLIs.
+    (subpath "/private/var/folders")                                  ;; macOS backing path for /var/folders.
+)
+
+;; Defense-in-depth: keep launchd-managed per-user listener sockets opt-in by specific integration profiles.
+(deny file-read* file-write*
+    (regex #"^/private/tmp/com\.apple\.launchd\.[^/]+/Listeners$")   ;; Real tmp namespace for launchd listener sockets (SSH agent, pasteboard, etc.).
+    (regex #"^/tmp/com\.apple\.launchd\.[^/]+/Listeners$")           ;; Symlinked /tmp view of the same launchd listener sockets.
+)
+
+;; Device nodes needed for shell I/O, PTYs, and descriptor plumbing in local LLM agent terminal workflows.
+(allow file-read* file-write*
+    (subpath "/dev/fd")                                               ;; Process substitution and file-descriptor access (bash <(...), /dev/fd/N).
+    (literal "/dev/stdout")                                           ;; Standard output stream device.
+    (literal "/dev/stderr")                                           ;; Standard error stream device.
+    (literal "/dev/null")                                              ;; Null sink/source device used by scripts/tools.
+    (literal "/dev/tty")                                              ;; Controlling terminal device for interactive sessions.
+    (literal "/dev/ptmx")                                             ;; PTY multiplexer required for pseudo-terminal allocation.
+    (literal "/dev/dtracehelper")                                     ;; Compatibility for dyld/runtime startup probes on some binaries.
+    (regex #"^/dev/tty")                                              ;; Dynamic tty device names created for terminal sessions.
+    (regex #"^/dev/ttys")                                             ;; Alternate tty naming pattern on macOS.
+    (regex #"^/dev/pty")                                              ;; Legacy PTY naming pattern used by some tools.
+)
+
+;; Read-only entropy and system probe devices touched by many runtimes spawned by local agents.
+(allow file-read*
+    (literal "/dev/zero")                                             ;; Zero-filled source used by some runtimes/tests.
+    (literal "/dev/autofs_nowait")                                    ;; Automount readiness check probed by most CLI processes at startup.
+    (literal "/dev/dtracehelper")                                     ;; DTrace helper probed by dyld at process start; harmless read avoids log noise.
+    (literal "/dev/urandom")                                          ;; Non-blocking entropy source used by crypto/token generation.
+    (literal "/dev/random")                                           ;; Blocking entropy source used by some security-sensitive tools.
+)
+
+;; Restrict ioctl to terminal devices plus dtracehelper probe compatibility.
+(allow file-ioctl
+    (literal "/dev/dtracehelper")                                     ;; Some runtimes issue ioctl probes here during startup.
+    (literal "/dev/tty")                                              ;; TTY mode/attribute ioctls needed by interactive shells.
+    (literal "/dev/ptmx")                                             ;; PTY master control ioctls for spawned terminal subprocesses.
+    (regex #"^/dev/tty")                                              ;; Dynamic /dev/ttyN paths created for active terminal sessions.
+    (regex #"^/dev/ttys")                                             ;; Alternate macOS dynamic TTY naming.
+    (regex #"^/dev/pty")                                              ;; Legacy PTY naming used by some terminal libraries.
+)
+
+;; Baseline mach services commonly touched by local-agent runtimes (logging, DNS, trust, file events, identity lookups).
+(allow mach-lookup
+    (global-name "com.apple.system.notification_center")              ;; Notification center lookup done by some CLIs.
+    (global-name "com.apple.system.opendirectoryd.libinfo")           ;; User/group resolution via opendirectory.
+    (global-name "com.apple.logd")                                    ;; logd connection used by unified logging APIs.
+    (global-name "com.apple.FSEvents")                                ;; File event stream access used by watchers.
+    (global-name "com.apple.SystemConfiguration.configd")             ;; System network/config queries for resolver bootstrap.
+    (global-name "com.apple.SystemConfiguration.DNSConfiguration")    ;; Node/c-ares DNS bootstrap XPC dependency.
+    (global-name "com.apple.trustd.agent")                            ;; Baseline trust evaluation service for CFNetwork/URLSession HTTPS.
+    (global-name "com.apple.diagnosticd")                             ;; Unified logging diagnosticd backend used by many system frameworks.
+    (global-name "com.apple.analyticsd")                              ;; Analytics subsystem queried during runtime initializations.
+    (global-name "com.apple.dnssd.service")                           ;; DNS-SD (Bonjour) service used for DNS resolution by ssh, curl, etc.
+    (global-name "com.apple.CoreServices.coreservicesd")              ;; Core Services daemon for UTI type resolution and file type identification.
+    (global-name "com.apple.DiskArbitration.diskarbitrationd")        ;; Disk metadata queries probed by some frameworks during init.
+    (global-name "com.apple.analyticsd.messagetracer")                ;; Analytics message tracer probed by frameworks during init.
+    (global-name "com.apple.system.logger")                           ;; Legacy system logger endpoint used by some CLIs.
+    (global-name "com.apple.coreservices.launchservicesd")            ;; Launch Services daemon for app registration and UTI resolution.
+)
+
+(allow system-socket)                                                 ;; AF_SYSTEM sockets used by network stack for kernel event monitoring.
+
+;; Shared-memory segment read used by NotificationCenter plumbing that some CLI frameworks touch during startup.
+(allow ipc-posix-shm-read-data
+    (ipc-posix-name "apple.shm.notification_center")                  ;; Notification center shared memory segment read by system frameworks.
+)
+
+;; ---------------------------------------------------------------------------
+;; HOME Ancestor Metadata
+;; Metadata-only ancestor directory literals for HOME path: /Users/bkonowitz
+;; Source: generated (mirrors emit_path_ancestor_metadata_literals)
+;; ---------------------------------------------------------------------------
+
+;; Some macOS runtimes probe HOME-scoped toolchain paths even when the
+;; selected workdir lives elsewhere. Without metadata-only access to the
+;; HOME ancestor chain, those probes fail before the more specific
+;; home-subpath/home-literal grants can match.
+(allow file-read-metadata
+    (literal "/")
+    (literal "/Users")
+    (literal "/Users/bkonowitz")
+)
+
+;; ---------------------------------------------------------------------------
+;; Network
+;; Network policy; intentionally fully open for reliable agent operation.
+;; Source: 20-network.sb
+;; ---------------------------------------------------------------------------
+
+;; Threat-model note: blocking exfiltration/C2 is explicitly NOT a goal for this sandbox.
+;; The goal here is reliable agent operation (package installs, API calls, web fetches, local servers).
+
+(allow network*)  ;; Allow outbound + inbound traffic so agent tooling and localhost dev servers work by default.
+
+;; ---------------------------------------------------------------------------
+;; Toolchain: Apple Toolchain Core
+;; Curated Apple Command Line Tools binaries and support data that many macOS
+;; developers expect to work by default via /usr/bin shim entrypoints.
+;; Source: 30-toolchains/apple-toolchain-core.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read*
+    ;; Ancestor traversal for the curated CLT binary/data whitelist.
+    (literal "/Library")
+    (literal "/Library/Developer")
+    (literal "/Library/Developer/CommandLineTools")
+    (literal "/Library/Developer/CommandLineTools/usr")
+    (literal "/Library/Developer/CommandLineTools/usr/bin")
+    (literal "/Library/Developer/CommandLineTools/usr/include")
+    (literal "/Library/Developer/CommandLineTools/usr/lib")
+    (literal "/Library/Developer/CommandLineTools/usr/libexec")
+    (literal "/Library/Developer/CommandLineTools/usr/libexec/git-core")
+    (literal "/Library/Developer/CommandLineTools/usr/share")
+    (literal "/Library/Developer/CommandLineTools/SDKs")
+
+    ;; Core SCM / build entrypoints commonly invoked through /usr/bin shims.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/git")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/make")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/gnumake")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/clang")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/gcc")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/cpp")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/c89")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/c99")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/ar")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/as")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/ld")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/ld-classic")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/libtool")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/lipo")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/codesign_allocate")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/dsymutil")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/bitcode_strip")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/install_name_tool")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/strip")
+
+    ;; Common source-generation / project-maintenance tooling.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/bison")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/byacc")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/flex")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/flex++")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/lex")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/yacc")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/m4")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/gm4")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/bm4")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/gperf")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/ctags")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/mig")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/rpcgen")
+    (literal "/Library/Developer/CommandLineTools/usr/libexec/migcom")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/unifdef")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/unifdefall")
+
+    ;; Low-risk inspection and formatting utilities.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/clang-format")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/clangd")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/strings")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-cov")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-cxxfilt")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-dwarfdump")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-nm")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-objdump")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-otool")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-profdata")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/llvm-size")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/dyld_info")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/cmpdylib")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/nm-classic")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/otool-classic")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/pagestuff")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/size-classic")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/nmedit")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/segedit")
+    (literal "/Library/Developer/CommandLineTools/usr/bin/vtool")
+
+    ;; Support files needed by git/clang and related CLT binaries.
+    (subpath "/Library/Developer/CommandLineTools/usr/libexec/git-core")
+    (subpath "/Library/Developer/CommandLineTools/usr/include")
+    (subpath "/Library/Developer/CommandLineTools/usr/lib")
+    (subpath "/Library/Developer/CommandLineTools/usr/share")
+    (subpath "/Library/Developer/CommandLineTools/SDKs")
+)
+
+;; ---------------------------------------------------------------------------
+;; Toolchain: Node.js
+;; Node.js runtime with npm, yarn, pnpm, and corepack package manager paths.
+;; Source: 30-toolchains/node.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    ;; Node version managers.
+    (home-subpath "/.nvm")
+    (home-subpath "/.fnm")
+
+    ;; npm
+    (home-subpath "/.npm")
+    (home-subpath "/.config/npm")
+    (home-subpath "/.cache/npm")
+    (home-subpath "/.cache/node")
+    (home-subpath "/.cache/prisma")
+    (home-subpath "/Library/Caches/npm")
+    (home-literal "/.npmrc")
+
+    ;; configstore (npm ecosystem config persistence)
+    (home-subpath "/.config/configstore")
+
+    ;; node-gyp
+    (home-subpath "/.node-gyp")
+    (home-subpath "/.cache/node-gyp")
+
+    ;; pnpm
+    (home-subpath "/.config/pnpm")
+    (home-subpath "/.pnpm-state")
+    (home-subpath "/.pnpm-store")
+    (home-subpath "/.local/share/pnpm")
+    (home-subpath "/.local/state/pnpm")
+    (home-subpath "/Library/pnpm")
+    (home-subpath "/Library/Caches/pnpm")
+    (home-subpath "/Library/Preferences/pnpm")  ;; pnpm-managed global npmrc lives here.
+
+    ;; yarn (classic + modern)
+    (home-subpath "/.yarn")
+    (home-literal "/.yarnrc")
+    (home-literal "/.yarnrc.yml")
+    (home-subpath "/.config/yarn")
+    (home-subpath "/.cache/yarn")
+    (home-subpath "/Library/Caches/Yarn")
+
+    ;; corepack
+    (home-subpath "/.cache/node/corepack")
+    (home-subpath "/Library/Caches/node/corepack")
+
+    ;; browser automation / test runners
+    (home-subpath "/Library/Caches/ms-playwright")
+    (home-subpath "/Library/Caches/Cypress")
+
+    ;; Node ecosystem caches used by CLIs and language tooling
+    (home-subpath "/Library/Caches/typescript")
+    (home-subpath "/Library/Caches/prisma-nodejs")
+    (home-subpath "/Library/Caches/checkpoint-nodejs")
+    (home-subpath "/Library/Caches/claude-cli-nodejs")
+
+    ;; Turborepo
+    (home-subpath "/.cache/turbo")
+    (home-subpath "/Library/Caches/turbo")
+    (home-subpath "/Library/Application Support/turborepo")
+)
+
+;; ---------------------------------------------------------------------------
+;; Toolchain: Python
+;; Python runtime, pip, uv, and virtualenv paths.
+;; Source: 30-toolchains/python.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-literal "/.local/bin/uv")            ;; uv binary observed in ~/.local/bin.
+    (home-literal "/.local/bin/uvx")           ;; uvx companion binary observed in ~/.local/bin.
+    (home-subpath "/.local/share/uv")          ;; uv tool metadata and installed tool/runtime state.
+    (home-subpath "/.local/state/uv")          ;; uv state/cache metadata on XDG-style setups.
+    (home-subpath "/.local/pipx")              ;; pipx-managed virtualenvs and shared python runtime.
+    (home-subpath "/.cache/uv")                ;; uv download/build cache for fast repeated runs.
+    (home-subpath "/Library/Caches/uv")        ;; macOS cache variant used by some uv installs.
+    (home-subpath "/.config/uv")               ;; uv config reads/writes during tool resolution.
+    (home-subpath "/.cache/pip")               ;; pip cache writes used by Python package installs.
+    (home-subpath "/.config/pip")              ;; pip config reads for index/auth/behavior settings.
+    (home-subpath "/Library/Caches/pip")       ;; macOS pip cache location used by some Python setups.
+    (home-subpath "/.cache/pypoetry")          ;; Poetry dependency cache for Python project tasks.
+    (home-subpath "/.config/pypoetry")         ;; Poetry config used during install/publish operations.
+    (home-subpath "/.local/share/pypoetry")    ;; Poetry local state and virtualenv metadata.
+    (home-subpath "/Library/Caches/pypoetry")  ;; macOS Poetry cache variant.
+    (home-subpath "/.cache/pdm")               ;; PDM dependency/cache data.
+    (home-subpath "/.config/pdm")              ;; PDM config files.
+    (home-subpath "/.local/share/pdm")         ;; PDM local metadata/state.
+    (home-subpath "/.cache/pre-commit")        ;; pre-commit hook environment cache.
+    (home-subpath "/.cache/mypy")              ;; mypy incremental/type cache.
+    (home-subpath "/.cache/ruff")              ;; Ruff lint/format cache.
+    (home-subpath "/.virtualenvs")             ;; virtualenvwrapper default location.
+    (home-subpath "/.ipython")                 ;; IPython history/profile data.
+    (home-subpath "/.jupyter")                 ;; Jupyter runtime/config paths in home.
+    (home-subpath "/.pyenv")                   ;; pyenv interpreter shims/versions used by many repos.
+    (home-literal "/.pypirc")                  ;; Python package index credentials/config file path.
+    (home-literal "/.python_history")          ;; REPL history file touched by Python subprocess sessions.
+    ;; conda / miniconda / miniforge
+    (home-subpath "/.conda")
+    (home-subpath "/miniconda3")
+    (home-subpath "/miniforge3")
+    (home-literal "/.condarc")
+    ;; hatch
+    (home-subpath "/.cache/hatch")
+    (home-subpath "/.config/hatch")
+    (home-subpath "/.local/share/hatch")
+)
+
+;; ---------------------------------------------------------------------------
+;; Toolchain: Go
+;; Go toolchain, module cache, and build cache paths.
+;; Source: 30-toolchains/go.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-subpath "/go")                       ;; Default GOPATH (~/go, ~/go/bin, ~/go/pkg/mod).
+    (home-subpath "/.cache/go-build")          ;; Go build cache.
+    (home-subpath "/Library/Caches/go-build")  ;; macOS Go build cache variant.
+    (home-subpath "/.config/go")               ;; Go environment config (go env).
+    (home-subpath "/.cache/golangci-lint")     ;; golangci-lint cache.
+    (home-subpath "/Library/Caches/golangci-lint") ;; macOS golangci-lint cache variant.
+    (home-subpath "/.config/golangci-lint")    ;; golangci-lint config.
+    (home-subpath "/.local/share/go")          ;; Go XDG data.
+    (home-subpath "/.goenv")                   ;; goenv version manager.
+    (home-subpath "/.cache/gopls")             ;; gopls language server cache.
+)
+
+;; ---------------------------------------------------------------------------
+;; Toolchain: Rust
+;; Rust toolchain via rustup/cargo, including config, cache, and optional sccache.
+;; Source: 30-toolchains/rust.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-subpath "/.cargo")                                          ;; Cargo home (binaries, registry, git checkouts).
+    (home-subpath "/.config/cargo")                                   ;; Cargo XDG config.
+    (home-subpath "/.rustup")                                         ;; rustup toolchain installs and shims.
+    (home-subpath "/.cache/cargo")                                    ;; Cargo cache.
+    (home-subpath "/Library/Caches/cargo")                            ;; macOS Cargo cache variant.
+    (home-subpath "/.cache/sccache")                                  ;; sccache shared compile cache.
+    (home-subpath "/Library/Caches/sccache")                          ;; macOS sccache cache variant.
+    (home-subpath "/Library/Application Support/Mozilla.sccache")     ;; sccache legacy path.
+)
+
+;; ---------------------------------------------------------------------------
+;; Toolchain: Runtime Managers
+;; Cross-language version managers (mise, asdf, proto, pkgx).
+;; Source: 30-toolchains/runtime-managers.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    ;; mise
+    (home-subpath "/.config/mise")
+    (home-subpath "/.local/share/mise")
+    (home-subpath "/.local/state/mise")
+    (home-subpath "/.cache/mise")
+    (home-subpath "/Library/Caches/mise")
+    (home-literal "/.mise.toml")
+
+    ;; volta
+    (home-subpath "/.volta")
+
+    ;; asdf
+    (home-subpath "/.asdf")
+    (home-subpath "/.config/asdf")
+    (home-subpath "/.local/share/asdf")
+    (home-subpath "/.local/state/asdf")
+    (home-subpath "/.cache/asdf")
+    (home-subpath "/Library/Caches/asdf")
+    (home-literal "/.asdfrc")
+    (home-literal "/.tool-versions")
+
+    ;; proto
+    (home-subpath "/.proto")
+    (home-literal "/.prototools")
+
+    ;; pkgx
+    (home-subpath "/.pkgx")
+    (home-subpath "/.local/share/pkgx")
+    (home-subpath "/.cache/pkgx")
+    (home-subpath "/Library/Caches/pkgx")
+    (home-subpath "/Library/Packages")
+)
+
+;; ---------------------------------------------------------------------------
+;; Category: Shared Agent Context
+;; Shared permissions for skills, agents, and guidance files.
+;; Source: 40-shared/agent-common.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-subpath "/.skills")         ;; Shared skill instructions/scripts that agents may read or update.
+    (home-subpath "/.agents")         ;; Agent config/skills directory (alternate location alongside ~/.skills).
+    (home-literal "/AGENTS.md")       ;; Shared agent policy/instructions file read+write for local workflows.
+)
+
+(allow file-read*
+    (home-subpath "/.claude/agents")  ;; Cross-agent convention: shared Claude agents directory.
+    (home-subpath "/.claude/skills")  ;; Cross-agent convention: shared Claude skills directory.
+    (home-literal "/CLAUDE.md")       ;; Cross-agent convention: repository/user guidance file.
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Dolt
+;; Dolt version-controlled database config, data, and server state.
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-subpath "/.dolt")            ;; Dolt global config, creds, and server state.
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Git
+;; Git client configuration and XDG config directory access.
+;; Source: 50-integrations-core/git.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read*
+    (home-prefix "/.gitconfig")    ;; User gitconfig and variants (.gitconfig.local, etc.) read by git CLI.
+    (home-prefix "/.gitignore")    ;; User global gitignore variants (.gitignore, .gitignore_global, etc.).
+    (home-subpath "/.config/git")  ;; XDG-style git config directory (config, ignore, attributes).
+    (home-literal "/.gitattributes")  ;; Global gitattributes file.
+    (home-literal "/.ssh")         ;; Directory traversal for default SSH metadata grants used by git-over-ssh.
+    (home-literal "/.ssh/config")  ;; SSH host aliases/IdentityFile selection used by git remotes.
+    (home-literal "/.ssh/known_hosts")  ;; Host key verification cache used by SSH git transports.
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: SCM CLIs
+;; GitHub CLI (gh) and GitLab CLI (glab) config, cache, and state access.
+;; Source: 50-integrations-core/scm-clis.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-subpath "/.config/gh")             ;; gh auth tokens/config for repo and PR automation.
+    (home-subpath "/.cache/gh")              ;; gh cache for API and command acceleration.
+    (home-subpath "/.local/share/gh")        ;; gh persistent state and extensions.
+    (home-subpath "/.local/state/gh")        ;; gh runtime state files.
+    (home-subpath "/.config/glab-cli")       ;; glab auth tokens/config for GitLab automation.
+    (home-subpath "/.cache/glab-cli")        ;; glab cache for API and command acceleration.
+    (home-subpath "/.local/share/glab-cli")  ;; glab persistent state.
+    (home-subpath "/.local/state/glab-cli")  ;; glab runtime state files.
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Launch Services
+;; macOS Launch Services access needed by the `open` command.
+;; Source: 50-integrations-core/launch-services.sb
+;; ---------------------------------------------------------------------------
+
+(allow mach-lookup
+    (global-name "com.apple.lsd.mapdb")                          ;; Read-only type->app mapping database.
+    (global-name "com.apple.lsd.modifydb")                       ;; Writeable mapping database (required even for read-only `open` calls).
+    (global-name "com.apple.coreservices.quarantine-resolver")    ;; Gatekeeper quarantine check before launching an app.
+)
+
+(allow file-issue-extension
+    (extension-class "com.apple.app-sandbox.read")
+    (extension-class "com.apple.app-sandbox.read-write")
+)
+
+(allow lsopen)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Container Runtime Default Deny
+;; Default-deny local container daemon sockets; opt-in via docker integration.
+;; Source: 50-integrations-core/container-runtime-default-deny.sb
+;; ---------------------------------------------------------------------------
+
+(deny file-read* file-write*
+    (literal "/var/run/docker.sock")
+    (literal "/private/var/run/docker.sock")
+    (literal "/var/run/podman/podman.sock")
+    (literal "/private/var/run/podman/podman.sock")
+    (home-literal "/.docker/run/docker.sock")
+    (home-literal "/.rd/docker.sock")
+    (home-literal "/.orbstack/run/docker.sock")
+    (regex (string-append "^" HOME_DIR "/\\.colima/docker\\.sock$"))
+    (regex (string-append "^" HOME_DIR "/\\.colima/[^/]+/docker\\.sock$"))
+    (regex (string-append "^" HOME_DIR "/\\.local/share/containers/podman/machine/podman\\.sock$"))
+    (regex (string-append "^" HOME_DIR "/\\.local/share/containers/podman/machine/[^/]+/podman\\.sock$"))
+    (regex (string-append "^" HOME_DIR "/\\.config/containers/podman/machine/podman\\.sock$"))
+    (regex (string-append "^" HOME_DIR "/\\.config/containers/podman/machine/[^/]+/podman\\.sock$"))
+)
+
+(deny network-outbound
+    (remote unix-socket (path-literal "/var/run/docker.sock"))
+    (remote unix-socket (path-literal "/private/var/run/docker.sock"))
+    (remote unix-socket (path-literal "/var/run/podman/podman.sock"))
+    (remote unix-socket (path-literal "/private/var/run/podman/podman.sock"))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.docker/run/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.rd/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.orbstack/run/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.colima/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.colima/[^/]+/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.local/share/containers/podman/machine/podman\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.local/share/containers/podman/machine/[^/]+/podman\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.config/containers/podman/machine/podman\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOME_DIR "/\\.config/containers/podman/machine/[^/]+/podman\\.sock$")))
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Keychain
+;; macOS Keychain and Security framework for agent authentication/credential storage.
+;; Source: 55-integrations-optional/keychain.sb
+;; Auto-injected: required by Claude Code, Codex, Cursor, Gemini agent profiles.
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-subpath "/Library/Keychains")                        ;; Keychain DB/files for CLI login sessions using macOS credentials.
+    (home-literal "/Library/Preferences/com.apple.security.plist")   ;; User security preferences read by some auth flows.
+)
+
+(allow file-read*
+    (literal "/Library/Preferences/com.apple.security.plist")  ;; Security preferences read by security CLI.
+    (literal "/Library/Keychains/System.keychain")             ;; System keychain read for security CLI operations.
+    (subpath "/private/var/db/mds")                            ;; MDS message store; hosts se_SecurityMessages used by securityd IPC.
+)
+
+(allow file-read-metadata
+    (home-literal "/Library")                                  ;; Restrict home traversal to the Library root only.
+    (home-literal "/Library/Keychains")                        ;; User keychain directory metadata for login/session lookups.
+    (literal "/Library")                                       ;; System Library traversal for system keychain access.
+    (literal "/Library/Keychains")                             ;; System keychain directory metadata.
+)
+
+(allow mach-lookup
+    (global-name "com.apple.SecurityServer")                   ;; Keychain operations depend on SecurityServer IPC.
+    (global-name "com.apple.security.agent")                   ;; Login prompts/token unlock dialogs route through this service.
+    (global-name "com.apple.securityd.xpc")                    ;; securityd backend needed for certificate/key queries.
+    (global-name "com.apple.security.authhost")                ;; Auth host service for interactive credential flows.
+    (global-name "com.apple.secd")                             ;; Secure enclave/credential mediation used by macOS security APIs.
+    (global-name "com.apple.trustd")                           ;; Additional trustd backend used by some keychain/security flows.
+)
+
+(allow ipc-posix-shm-read-data ipc-posix-shm-write-create ipc-posix-shm-write-data
+    (ipc-posix-name "com.apple.AppleDatabaseChanged")          ;; Keychain database change notifications via shared memory.
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Browser Native Messaging
+;; Browser native messaging host registration (Chromium + Firefox) and extension detection.
+;; Source: 55-integrations-optional/browser-native-messaging.sb
+;; Auto-injected: required by Claude Code agent profile.
+;; ---------------------------------------------------------------------------
+
+(allow file-read*
+    (home-literal "/Library/Application Support/Google/Chrome")
+    (home-literal "/Library/Application Support/BraveSoftware/Brave-Browser")
+    (home-literal "/Library/Application Support/Arc/User Data")
+    (home-literal "/Library/Application Support/Microsoft Edge")
+    (home-literal "/Library/Application Support/Chromium")
+    (home-literal "/Library/Application Support/Vivaldi")
+    (home-literal "/Library/Application Support/com.operasoftware.Opera")
+    (home-literal "/Library/Application Support/Firefox")
+    (home-literal "/Library/Application Support/Mozilla")
+    (home-subpath "/Library/Application Support/Google/Chrome/Default/Extensions")
+    (home-subpath "/Library/Application Support/BraveSoftware/Brave-Browser/Default/Extensions")
+    (home-subpath "/Library/Application Support/Arc/User Data/Default/Extensions")
+    (home-subpath "/Library/Application Support/Microsoft Edge/Default/Extensions")
+    (home-subpath "/Library/Application Support/Chromium/Default/Extensions")
+    (home-subpath "/Library/Application Support/Vivaldi/Default/Extensions")
+    (home-subpath "/Library/Application Support/com.operasoftware.Opera/Default/Extensions")
+)
+
+(allow file-read* file-write*
+    (home-subpath "/Library/Application Support/Google/Chrome/NativeMessagingHosts")
+    (home-subpath "/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts")
+    (home-subpath "/Library/Application Support/Arc/User Data/NativeMessagingHosts")
+    (home-subpath "/Library/Application Support/Microsoft Edge/NativeMessagingHosts")
+    (home-subpath "/Library/Application Support/Chromium/NativeMessagingHosts")
+    (home-subpath "/Library/Application Support/Vivaldi/NativeMessagingHosts")
+    (home-subpath "/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts")
+    (home-subpath "/Library/Application Support/Mozilla/NativeMessagingHosts")
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Shell Init
+;; Opt-in reads for shell init/config files under /etc and $HOME.
+;; Source: 55-integrations-optional/shell-init.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read*
+    ;; Shared shell startup files and PATH defaults.
+    (literal "/private/etc/profile")                                  ;; Shell startup file read by login-shell invocations.
+    (literal "/private/etc/paths")                                    ;; PATH defaults used by shell command resolution.
+    (subpath "/private/etc/paths.d")                                  ;; Additional PATH fragment directory used by macOS shells.
+
+    ;; Bash startup files.
+    (literal "/private/etc/bashrc")                                   ;; Bash startup file read by spawned bash sessions.
+
+    ;; Zsh startup files and completion cache.
+    (literal "/private/etc/zprofile")                                 ;; Zsh startup file read by login zsh sessions.
+    (literal "/private/etc/zshrc")                                    ;; Zsh startup file read by interactive zsh sessions.
+    (home-literal "/.zshenv")                                         ;; Zsh environment file read on every zsh invocation (incl. non-interactive).
+    (home-literal "/.zprofile")                                       ;; Zsh profile file read by login zsh sessions.
+    (home-literal "/.zshrc")                                          ;; Zsh interactive startup file read by interactive zsh sessions.
+    (home-literal "/.zcompdump")                                      ;; Zsh completion dump cache used by compinit.
+    (home-prefix "/.zcompdump")                                       ;; Versioned variants like .zcompdump-hostname-5.9.
+
+    ;; Fish startup files and universal variables.
+    (literal "/private/etc/fish/config.fish")                         ;; Fish system config read on shell startup.
+    (subpath "/private/etc/fish/conf.d")                              ;; Fish system startup snippets sourced from conf.d.
+    (home-literal "/.config/fish")                                    ;; Fish config directory traversal.
+    (home-literal "/.config/fish/config.fish")                        ;; Fish user config read on shell startup.
+    (home-subpath "/.config/fish/conf.d")                             ;; Fish user startup snippets sourced from conf.d.
+    (home-literal "/.config/fish/fish_variables")                     ;; Fish universal variables database read during shell startup.
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Clipboard
+;; Clipboard read/write access for macOS pasteboard (paste/drag-drop images).
+;; Source: 55-integrations-optional/clipboard.sb
+;; ---------------------------------------------------------------------------
+
+(allow mach-lookup
+    (global-name "com.apple.pasteboard.1")                               ;; Pasteboard service used by pbcopy/pbpaste and image paste.
+    (global-name "com.apple.lsd.mapdb")                                  ;; Launch Services type lookups required by pasteboard.
+    (global-name "com.apple.lsd.modifydb")
+)
+
+;; ---------------------------------------------------------------------------
+;; Integration: Chromium Headless
+;; AppKit, crashpad, GPU, and launch-service allowances needed by headless
+;; Chromium/Playwright runtimes (CDP MCP servers, browser automation).
+;; Source: 55-integrations-optional/chromium-headless.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read-metadata
+    (literal "/private/var/db")
+    (literal "/private/var/db/.AppleSetupDone")                       ;; Chromium helper/GPU startup probes setup state.
+    (home-literal "/Library")
+    (home-literal "/Library/Application Support")
+    (home-literal "/Library/Caches")
+    (home-literal "/Library/Spelling")
+)
+
+(allow file-read*
+    (literal "/private/etc")
+    (home-literal "/Library/Preferences/com.apple.universalaccess.plist")
+    (home-literal "/Library/Preferences/com.apple.Accessibility.plist")
+    (home-literal "/Library/Preferences/com.apple.CoreGraphics.plist")
+    (home-literal "/Library/Preferences/com.apple.symbolichotkeys.plist")
+    (home-literal "/Library/Preferences/com.apple.ServicesMenu.Services.plist")
+    (home-literal "/Library/Preferences/com.apple.speech.recognition.AppleSpeechRecognition.prefs.plist")
+    (home-literal "/Library/Preferences/com.apple.SpeakSelection.plist")
+    (home-literal "/Library/Preferences/com.apple.assistant.support.plist")
+    (home-literal "/Library/Preferences/com.apple.assistant.backedup.plist")
+    (home-literal "/Library/Preferences/pbs.plist")
+    (home-literal "/Library/Preferences/com.apple.HIToolbox.plist")
+    (literal "/Library/Preferences/com.apple.HIToolbox.plist")
+    (home-subpath "/Library/Preferences/com.apple.LaunchServices")
+    (home-subpath "/Library/Application Support/CrashReporter")
+    (home-subpath "/Library/Spelling")
+    (home-literal "/Library/Keyboard Layouts")
+    (home-literal "/Library/Input Methods")
+
+    ;; Chrome app bundles for CDP MCP server / browser automation.
+    (subpath "/Applications/Google Chrome.app")
+    (subpath "/Applications/Google Chrome Canary.app")
+)
+
+(allow user-preference-read
+    (preference-domain "com.apple.hitoolbox")
+)
+
+(allow mach-register
+    (global-name-regex #"^org\.chromium\.Chromium\.MachPortRendezvousServer\.")
+    (global-name-regex #"^org\.chromium\.crashpad\.child_port_handshake\.")
+    (local-name "com.apple.axserver")
+    (local-name "com.apple.tsm.portname")
+    (local-name "com.apple.coredrag")
+)
+
+(allow mach-lookup
+    (global-name-regex #"^org\.chromium\.Chromium\.MachPortRendezvousServer\.")
+    (global-name-regex #"^org\.chromium\.crashpad\.child_port_handshake\.")
+    (global-name "com.apple.MTLCompilerService")
+    (global-name "com.apple.SafariPlatformSupport.Helper")
+    (global-name "com.apple.CARenderServer")
+    (global-name "com.apple.windowserver.active")
+    (global-name "com.apple.windowmanager.server")
+    (global-name "com.apple.window_proxies")
+    (global-name "com.apple.dock.server")
+    (global-name "com.apple.tccd")
+    (global-name "com.apple.tccd.system")
+    (global-name "com.apple.fonts")
+    (global-name "com.apple.FontObjectsServer")
+    (global-name "com.apple.lsd.mapdb")
+    (global-name "com.apple.lsd.modifydb")
+    (global-name "com.apple.iconservices")
+    (global-name "com.apple.coreservices.appleevents")
+    (global-name "com.apple.coreservices.sharedfilelistd.xpc")
+    (global-name "com.apple.coreservices.quarantine-resolver")
+    (global-name "com.apple.hiservices-xpcservice")
+    (global-name "com.apple.iohideventsystem")
+    (global-name "com.apple.tsm.uiserver")
+    (global-name "com.apple.touchbarserver.mig")
+    (global-name "com.apple.accessibility.voices")
+    (global-name "com.apple.backboard.hid-services.xpc")
+    (global-name "com.apple.backboard.BKSEndpointProviderService")
+    (global-name "com.apple.TextInputUI.xpc.CursorUIViewService")
+    (global-name "com.apple.inputmethodkit.launchagent")
+    (global-name "com.apple.inputmethodkit.launcher")
+    (global-name "com.apple.inputmethodkit.getxpcendpoint")
+    (global-name "com.apple.ViewBridgeAuxiliary")
+    (global-name "com.apple.appkit.restoration_storage")
+    (global-name "com.apple.appkit.xpc.openAndSavePanelService")
+    (global-name "com.apple.backgroundtaskmanagementagent")
+    (global-name "com.apple.pbs.fetch_services")
+    (global-name "com.apple.powerlog.plxpclogger.xpc")
+    (global-name "com.apple.FileCoordination")
+    (global-name "com.apple.security.syspolicy")
+    (global-name "com.apple.security.syspolicy.exec")
+    (global-name "com.apple.sidecar-relay")
+    (global-name "com.apple.scopedbookmarksagent.xpc")
+    (global-name "com.apple.xpc.smd")
+    (global-name "com.apple.bsd.dirhelper")
+    (global-name "com.apple.system.opendirectoryd.membership")
+    (global-name "com.apple.logd.events")
+    (global-name "com.apple.usernotifications.listener")
+    (global-name "com.apple.audio.SystemSoundServer-OSX")
+    (global-name "com.apple.audio.audiohald")
+    (global-name "mul-xpc (Apple)_OpenStep")
+    (global-name "com.apple.naturallanguaged")
+    (global-name "com.apple.inputanalyticsd")
+    (global-name-prefix "com.apple.distributed_notifications@")
+)
+
+(allow system-fsctl
+    (fsctl-command (_IO "h" 47))
+)
+
+(allow iokit-open
+    (iokit-user-client-class "RootDomainUserClient")
+    (iokit-user-client-class "IOHIDParamUserClient")
+    (iokit-user-client-class "AppleNVMeEANUC")
+    (iokit-user-client-class "IOSurfaceRootUserClient")
+    (iokit-user-client-class "AGXDeviceUserClient")
+)
+
+;; ---------------------------------------------------------------------------
+;; Agent: Claude Code
+;; Claude Code CLI binary, state, config, and MCP integration paths.
+;; Source: 60-agents/claude-code.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-prefix "/.local/bin/claude")          ;; Installer-managed binary path (symlink target under ~/.local/share/claude/versions/*).
+    (home-subpath "/.cache/claude")             ;; Claude CLI cache.
+    (home-subpath "/.claude")                   ;; Claude Code state, config, projects, agents, skills.
+    (home-prefix "/.claude.json")               ;; Claude config JSON variants.
+    (home-literal "/.claude.lock")              ;; Claude lock file for concurrent access.
+    (home-subpath "/.config/claude")            ;; Claude XDG config.
+    (home-subpath "/.local/state/claude")       ;; Claude XDG state.
+    (home-subpath "/.local/share/claude")       ;; Claude XDG data (versions, binaries).
+    (home-literal "/.mcp.json")                 ;; MCP server configuration file.
+)
+
+(allow file-read*
+    (home-prefix "/.claude.json.")              ;; Claude config JSON dot-variants.
+    (home-literal "/Library/Application Support/Claude/claude_desktop_config.json")  ;; Claude Desktop MCP import source.
+    (subpath "/Library/Application Support/ClaudeCode/.claude")       ;; Managed Claude config.
+    (literal "/Library/Application Support/ClaudeCode/managed-settings.json")  ;; Managed settings payload.
+    (literal "/Library/Application Support/ClaudeCode/managed-mcp.json")       ;; Managed MCP payload.
+    (literal "/Library/Application Support/ClaudeCode/CLAUDE.md")              ;; Managed guidance file.
+)
+
+;; ---------------------------------------------------------------------------
+;; Agent: Codex
+;; Codex CLI binary, state, and config paths.
+;; Source: 60-agents/codex.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-prefix "/.local/bin/codex")           ;; Codex binary path.
+    (home-subpath "/.codex")                    ;; Codex state/config.
+    (home-subpath "/.cache/codex")              ;; Codex cache.
+)
+
+(allow file-read*
+    (home-literal "/Library/Preferences/com.openai.codex.plist")  ;; Codex user-level preferences plist.
+    (literal "/Library/Preferences/com.openai.codex.plist")       ;; Codex system preferences plist (managed setups).
+    (literal "/Library/Managed Preferences/com.openai.codex.plist") ;; Codex MDM-managed preferences payload.
+    (subpath "/etc/codex")                                         ;; System-wide config and requirements layers.
+)
+
+;; ---------------------------------------------------------------------------
+;; Agent: Cursor
+;; Cursor CLI binary, state, config, and app bundle paths.
+;; Source: 60-agents/cursor-agent.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-prefix "/.local/bin/agent")           ;; cursor-agent install/update symlink.
+    (home-prefix "/.local/bin/cursor-agent")    ;; cursor-agent binary symlink.
+    (home-prefix "/.local/bin/cursor")          ;; cursor CLI shim.
+    (home-subpath "/.local/share/cursor-agent") ;; cursor-agent versions and install locks.
+    (home-subpath "/.cursor")                   ;; Cursor state (including project state under ~/.cursor/projects).
+    (home-subpath "/.config/cursor")            ;; Cursor XDG config.
+    (home-subpath "/.cache/cursor-compile-cache")   ;; NODE_COMPILE_CACHE for cursor wrapper.
+    (home-subpath "/Library/Caches/cursor-compile-cache")  ;; macOS cache variant.
+)
+
+(allow file-read*
+    (home-subpath "/Library/Application Support/Cursor")  ;; Workspace metadata and IDE state.
+    (literal "/Applications")                              ;; App listing for Cursor.app detection.
+    (literal "/usr/local/bin/cursor")                      ;; Homebrew cursor binary.
+    (literal "/opt/homebrew/bin/cursor")                   ;; Apple Silicon Homebrew cursor binary.
+    (subpath "/Applications/Cursor.app")                   ;; Cursor.app bundle.
+)
+
+;; ---------------------------------------------------------------------------
+;; Agent: Gemini
+;; Gemini CLI binary, state, and config paths.
+;; Source: 60-agents/gemini.sb
+;; ---------------------------------------------------------------------------
+
+(allow file-read* file-write*
+    (home-prefix "/.local/bin/gemini")           ;; Gemini binary path.
+    (home-subpath "/.gemini")                    ;; Gemini state/config.
+    (home-subpath "/.cache/gemini")              ;; Gemini cache.
+)
+
+(allow file-read*
+    (subpath "/Library/Application Support/GeminiCli")  ;; Enterprise managed settings.
+)
+
+;; ---------------------------------------------------------------------------
+;; Static Project Directory Grants
+;; Hardcoded project directories from user configuration.
+;; ---------------------------------------------------------------------------
+
+;; Generated ancestor directory literals for ~/src
+;;
+;; Why file-read* (not file-read-metadata) with literal (not subpath):
+;; Agents (notably Claude Code) call readdir() on every ancestor of the working
+;; directory during startup. If only file-read-metadata (stat) is granted, the
+;; agent cannot list directory contents, which causes it to blank PATH and break.
+;; Using 'literal' (not 'subpath') keeps this safe: it grants read access to the
+;; directory entry itself (i.e. listing its immediate children), but does NOT
+;; grant recursive read access to files or subdirectories under it.
+(allow file-read*
+    (literal "/")
+    (literal "/Users")
+    (literal "/Users/bkonowitz")
+    (literal "/Users/bkonowitz/src")
+)
+
+;; ~/src: read-write (primary code directory)
+(allow file-read* file-write*
+    (subpath "/Users/bkonowitz/src")
+)
+
+;; Generated ancestor directory literals for ~/pkg
+(allow file-read*
+    (literal "/")
+    (literal "/Users")
+    (literal "/Users/bkonowitz")
+    (literal "/Users/bkonowitz/pkg")
+)
+
+;; ~/pkg: read-only (Go package references)
+(allow file-read*
+    (subpath "/Users/bkonowitz/pkg")
+)
+
+;; ---------------------------------------------------------------------------
+;; Dynamic Workdir Block
+;; Replaced at runtime by run-sandboxed.sh wrapper script.
+;; The __SAFEHOUSE_WORKDIR__ token is substituted with the resolved workdir path.
+;; ---------------------------------------------------------------------------
+
+;; __WORKDIR_BLOCK_START__
+(allow file-read*
+    (literal "__SAFEHOUSE_WORKDIR__")
+)
+(allow file-read* file-write*
+    (subpath "__SAFEHOUSE_WORKDIR__")
+)
+;; __WORKDIR_BLOCK_END__
